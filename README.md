@@ -21,18 +21,12 @@ Point a WhatsApp Business number at this webhook and users can chat with an AI, 
 
 This began as a WhatsApp ↔ GPT-3.5 text bot that, despite its name, had **no vision** and read voice notes through a fragile Google-SpeechRecognition + `pydub` + `soundfile` + OGG→WAV pipeline. It also shipped with **API keys hardcoded in source**.
 
-This rebuild fixes all of that and delivers the multimodal assistant the name always implied:
-
-| | **Before** | **After** (this repo) |
-|---|---|---|
-| Images | ❌ none | ✅ **vision** — send a photo, get an answer |
-| Voice notes | Google SR + pydub + soundfile | ✅ one **Whisper** call |
-| Model | `gpt-3.5-turbo` | `gpt-4o-mini` (vision) — OpenAI **or** Azure |
-| Secrets | **hardcoded in `app.py`** | environment variables only |
-| Webhook security | verify-token only | + **HMAC `X-Hub-Signature-256`** validation |
-| Memory | unbounded dict (grows forever) | bounded per-user history |
-| Structure | one 250-line file | small, testable modules |
-| Tests | none | 37 tests, ~81% coverage |
+This rebuild delivers the multimodal assistant the name always implied: it adds
+**vision** (send a photo, get an answer), swaps the fragile speech stack for a
+single **Whisper** call, runs on a modern model via **OpenAI or Azure**, moves
+every secret into the environment, verifies webhook signatures, bounds and
+persists conversation memory, and splits the old single file into small, tested
+modules.
 
 ## ✨ Features
 
@@ -48,21 +42,24 @@ This rebuild fixes all of that and delivers the multimodal assistant the name al
 
 ## 🏗️ How it works
 
-```
-WhatsApp user
-     │  text / photo / voice
-     ▼
-Meta Cloud API ──POST /webhook──►  verify signature ─► parse_webhook ─► IncomingMessage
-                                                                              │
-                              ┌───────────────────────────────────────────────┤
-                              ▼                      ▼                         ▼
-                         text → chat          image → vision           audio → Whisper → chat
-                              └──────────── ConversationMemory ─────────────────┘
-                                                     │
-                                          reply ──► WhatsApp Cloud API ──► user
+<!-- Rendered by GitHub's built-in Mermaid support -->
+```mermaid
+flowchart TD
+    U(["📱 WhatsApp user"]) -->|"text · photo · voice"| META["Meta Cloud API"]
+    META -->|"POST /webhook"| V{"verify signature<br/>(HMAC)"}
+    V -->|valid| P["parse_webhook → IncomingMessage"]
+    P --> R{"route by type"}
+    R -->|text| C["💬 chat"]
+    R -->|image| VIS["🖼️ vision"]
+    R -->|audio| W["🎙️ Whisper → chat"]
+    C --> MEM[("conversation store<br/>users · conversations · messages")]
+    VIS --> MEM
+    W --> MEM
+    MEM --> REPLY["reply"]
+    REPLY -->|"WhatsApp Cloud API"| U
 ```
 
-Each layer is its own module: [`app/whatsapp/`](app/whatsapp) (parse / verify / send), [`app/ai/`](app/ai) (chat / vision / transcribe), [`app/memory.py`](app/memory.py), and [`app/handler.py`](app/handler.py) ties them together — independent of Flask and unit-tested in isolation.
+Each layer is its own module: [`app/whatsapp/`](app/whatsapp) (parse / verify / send), [`app/ai/`](app/ai) (chat / vision / transcribe), [`app/db/`](app/db) + [`app/memory.py`](app/memory.py) (persistence), and [`app/handler.py`](app/handler.py) ties them together — independent of Flask and unit-tested in isolation.
 
 ## 🚀 Quickstart
 
@@ -153,21 +150,42 @@ service and points the app at it.
 
 ### Schema
 
-Tables are created automatically on first run ([`app/db/models.py`](app/db/models.py)):
+Defined by the ORM models in [`app/db/models.py`](app/db/models.py):
 
-```
-┌─────────────┐        ┌──────────────────┐        ┌─────────────────────┐
-│   users     │ 1    N │  conversations   │ 1    N │     messages        │
-├─────────────┤───────►├──────────────────┤───────►├─────────────────────┤
-│ id          │        │ id               │        │ id                  │
-│ wa_id (uniq)│        │ user_id (FK)     │        │ conversation_id (FK)│
-│ profile_name│        │ is_active        │        │ user_id (FK)        │
-│ is_blocked  │        │ started_at       │        │ role                │
-│ message_cnt │        │ ended_at         │        │ message_type        │
-│ created_at  │        └──────────────────┘        │ content             │
-│ last_seen_at│                                     │ wa_message_id (uniq)│
-└─────────────┘                                     │ media_id, created_at│
-                                                    └─────────────────────┘
+<!-- Rendered by GitHub's built-in Mermaid support -->
+```mermaid
+erDiagram
+    users ||--o{ conversations : has
+    conversations ||--o{ messages : contains
+    users ||--o{ messages : authors
+
+    users {
+        int id PK
+        string wa_id UK "phone number"
+        string profile_name
+        bool is_blocked
+        int message_count
+        datetime created_at
+        datetime last_seen_at
+    }
+    conversations {
+        int id PK
+        int user_id FK
+        bool is_active
+        datetime started_at
+        datetime ended_at
+    }
+    messages {
+        int id PK
+        int conversation_id FK
+        int user_id FK
+        string role "user / assistant / system"
+        string message_type "text / image / audio"
+        text content
+        string wa_message_id UK "idempotency"
+        string media_id
+        datetime created_at
+    }
 ```
 
 - **users** — one row per WhatsApp contact, with profile name, last-seen, and message count.
