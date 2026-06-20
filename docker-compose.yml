@@ -1,0 +1,9 @@
+services:
+  whatsapp-ai:
+    build: .
+    ports:
+      - "5060:5060"
+    env_file:
+      - .env
+    environment:
+      - FLASK_DEBUG=false

@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WhatsApp AI Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+  <main class="wrap">
+    <div class="badge">● online</div>
+    <h1><span class="wa">WhatsApp</span> AI Assistant</h1>
+    <p class="sub">A multimodal assistant for WhatsApp — it understands text, photos, and voice notes.</p>
+    <div class="cards">
+      <div class="card"><span class="ic">💬</span><h3>Text</h3><p>Chat with memory across messages.</p></div>
+      <div class="card"><span class="ic">🖼️</span><h3>Vision</h3><p>Send a photo — it sees and answers.</p></div>
+      <div class="card"><span class="ic">🎙️</span><h3>Voice</h3><p>Voice notes transcribed with Whisper.</p></div>
+    </div>
+    <p class="foot">Webhook is live and listening. Model: <code>{{ model }}</code></p>
+  </main>
+</body>
+</html>

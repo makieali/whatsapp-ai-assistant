@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Secrets / env  -- NEVER commit real tokens
+.env
+*.local
+
+# Runtime
+logs/
+*.log
+logs.txt
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
