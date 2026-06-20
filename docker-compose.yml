@@ -9,6 +9,8 @@ services:
       - FLASK_DEBUG=false
       # Use the Postgres service below by default (override in .env if needed).
       - DATABASE_URL=postgresql://whatsbot:whatsbot@db:5432/whatsbot
+      # Schema is managed by Alembic migrations (run on container start).
+      - AUTO_CREATE_TABLES=false
     depends_on:
       - db
 

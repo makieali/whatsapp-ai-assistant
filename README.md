@@ -6,10 +6,11 @@
 
 Point a WhatsApp Business number at this webhook and users can chat with an AI, send a photo to get it described or analyzed, or send a voice note to have it transcribed and answered — all with conversation memory.
 
+[![CI](https://github.com/makieali/whatsapp-ai-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/makieali/whatsapp-ai-assistant/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-37%20passing-brightgreen.svg)](#-testing)
-[![Coverage](https://img.shields.io/badge/coverage-81%25-brightgreen.svg)](#-testing)
+[![Tests](https://img.shields.io/badge/tests-55%20passing-brightgreen.svg)](#-testing)
+[![DB](https://img.shields.io/badge/DB-PostgreSQL%20%7C%20SQLite-336791.svg)](#-conversation-memory--database)
 [![Providers](https://img.shields.io/badge/LLM-OpenAI%20%7C%20Azure-412991.svg)](#-configuration)
 
 </div>
@@ -108,10 +109,12 @@ All via environment variables (see [`.env.example`](./.env.example)):
 
 ```bash
 pip install -r requirements.txt
-pytest                     # 37 passed, ~81% coverage
+pytest                     # 53 passed offline; 55 with a Postgres DB
 ```
 
-Tests mock the model and the WhatsApp HTTP calls, so the suite runs **offline with no keys**. They cover payload parsing, signature verification, bounded memory, the outbound client (mocked HTTP), message dispatch for all three modalities, and the full webhook route (including signature rejection and "never 500 the webhook" behavior).
+Tests mock the model and the WhatsApp HTTP calls, so the suite runs **offline with no keys**. They cover payload parsing, signature verification, bounded memory, the SQL repository (schema, conversation lifecycle, dedup, stats), the outbound client (mocked HTTP), message dispatch for all three modalities, and the full webhook route (including signature rejection and "never 500 the webhook" behavior).
+
+**CI** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the suite on every push/PR against a real **PostgreSQL** service — applying the Alembic migration and running the Postgres-path tests (set `TEST_DATABASE_URL` to run them locally too).
 
 > Verified end-to-end against a live Azure OpenAI vision deployment: a text question, a **memory-dependent follow-up**, and an **image with a caption** were all answered correctly through the real handler pipeline (WhatsApp transport mocked).
 
@@ -180,9 +183,23 @@ When a database is configured, returns aggregate usage (counts only, no PII):
   "messages": 214, "messages_by_type": { "text": 180, "image": 22, "audio": 12 } }
 ```
 
-> Migrations: the app bootstraps tables with `create_all`. For evolving schemas
-> in production, add [Alembic](https://alembic.sqlalchemy.org/) — the ORM models
-> are already structured for it.
+### Migrations (Alembic)
+
+The schema is versioned with [Alembic](https://alembic.sqlalchemy.org/). For a
+quick local start the app auto-creates tables (`AUTO_CREATE_TABLES=true`, the
+default) — nothing to run. In production, manage the schema with migrations
+instead:
+
+```bash
+export DATABASE_URL=postgresql://user:pass@host:5432/whatsbot
+export AUTO_CREATE_TABLES=false      # let migrations own the schema
+alembic upgrade head                 # create / update tables
+```
+
+After changing a model in `app/db/models.py`, generate a migration with
+`alembic revision --autogenerate -m "…"` and commit it. The Docker image runs
+`alembic upgrade head` on startup automatically whenever `DATABASE_URL` is set
+(see `entrypoint.sh`), so `docker compose up` provisions the schema for you.
 
 ## 📁 Project layout
 
@@ -199,8 +216,18 @@ whatsapp-ai-assistant/
 │   ├── ai/                # chat · vision · transcribe · client
 │   ├── whatsapp/          # parser · verify (HMAC) · client (Graph API)
 │   └── templates/index.html
-└── tests/                 # pytest, AI + HTTP mocked
+├── migrations/            # Alembic migrations (versioned schema)
+├── tests/                 # pytest, AI + HTTP mocked
+├── .github/workflows/     # CI (pytest + Postgres service)
+├── entrypoint.sh          # runs migrations then serves
+└── Dockerfile · docker-compose.yml
 ```
+
+## 🤝 Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md) for setup,
+conventions, and how to add a database migration. In short: branch off `main`,
+keep `pytest` green, and add tests for new behavior.
 
 ## 📄 License
 

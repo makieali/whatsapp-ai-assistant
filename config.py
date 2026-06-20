@@ -50,6 +50,9 @@ class Config:
     # Set -> shared, persistent SQL store, e.g.
     #   sqlite:///conversations.db   or   postgresql://user:pass@host/db
     DATABASE_URL = os.getenv("DATABASE_URL")
+    # Auto-create tables on startup (handy for SQLite / quick start). Set to
+    # false in production when you manage the schema with Alembic migrations.
+    AUTO_CREATE_TABLES = _as_bool(os.getenv("AUTO_CREATE_TABLES", "true"))
 
     @classmethod
     def use_azure(cls) -> bool:

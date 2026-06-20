@@ -79,5 +79,8 @@ def build_memory(config):
     if getattr(config, "DATABASE_URL", None):
         from app.db import SqlRepository
 
-        return SqlRepository(config.SYSTEM_PROMPT, config.MAX_HISTORY_TURNS, config.DATABASE_URL)
+        return SqlRepository(
+            config.SYSTEM_PROMPT, config.MAX_HISTORY_TURNS, config.DATABASE_URL,
+            create_tables=getattr(config, "AUTO_CREATE_TABLES", True),
+        )
     return ConversationMemory(config.SYSTEM_PROMPT, config.MAX_HISTORY_TURNS)

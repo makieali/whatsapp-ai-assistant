@@ -9,8 +9,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt gunicorn
 
 COPY . .
+RUN chmod +x entrypoint.sh
 
 EXPOSE 5060
 
-# Webhook server. Gunicorn for production; swap to `python run.py` for dev.
+# entrypoint runs `alembic upgrade head` when DATABASE_URL is set, then serves.
+ENTRYPOINT ["./entrypoint.sh"]
 CMD ["gunicorn", "--bind", "0.0.0.0:5060", "--workers", "2", "run:app"]

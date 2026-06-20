@@ -29,14 +29,18 @@ def _now() -> dt.datetime:
 
 class SqlRepository:
     def __init__(self, system_prompt: str, max_turns: int = 12,
-                 database_url: str = "sqlite:///conversations.db") -> None:
+                 database_url: str = "sqlite:///conversations.db",
+                 create_tables: bool = True) -> None:
         self._system = {"role": "system", "content": system_prompt}
         self._max_messages = max_turns * 2  # a turn = user + assistant
         connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
         self._engine = create_engine(
             normalize_url(database_url), connect_args=connect_args, future=True,
         )
-        Base.metadata.create_all(self._engine)
+        # Convenience for SQLite/quick start. In production, set
+        # AUTO_CREATE_TABLES=false and manage the schema with Alembic.
+        if create_tables:
+            Base.metadata.create_all(self._engine)
         self._Session = sessionmaker(self._engine, expire_on_commit=False)
 
     # ---- internals ----
