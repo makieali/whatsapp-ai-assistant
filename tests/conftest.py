@@ -1,39 +1,54 @@
 """Test fixtures: webhook payload builders and fakes for AI + WhatsApp I/O."""
+import itertools
+
 import pytest
 
 from config import Config
 
+# Unique message ids per built payload (WhatsApp ids are unique; the app now
+# dedupes on them, so reusing one id would look like a re-delivery).
+_msg_counter = itertools.count(1)
+
+
+def _mid(prefix):
+    return f"wamid.{prefix}{next(_msg_counter)}"
+
 
 # ---- webhook payload builders ----
 
-def text_payload(body="Hello", from_number="15551230000", phone_id="PHONE123"):
-    return _envelope(phone_id, {
-        "from": from_number, "id": "wamid.TEXT1", "type": "text",
+def text_payload(body="Hello", from_number="15551230000", phone_id="PHONE123",
+                 msg_id=None, name="Test User"):
+    return _envelope(phone_id, from_number, name, {
+        "from": from_number, "id": msg_id or _mid("TEXT"), "type": "text",
         "text": {"body": body},
     })
 
 
-def image_payload(caption="", media_id="MEDIA_IMG", from_number="15551230000", phone_id="PHONE123"):
-    return _envelope(phone_id, {
-        "from": from_number, "id": "wamid.IMG1", "type": "image",
+def image_payload(caption="", media_id="MEDIA_IMG", from_number="15551230000",
+                  phone_id="PHONE123", msg_id=None, name="Test User"):
+    return _envelope(phone_id, from_number, name, {
+        "from": from_number, "id": msg_id or _mid("IMG"), "type": "image",
         "image": {"id": media_id, "caption": caption, "mime_type": "image/jpeg"},
     })
 
 
-def audio_payload(media_id="MEDIA_AUD", from_number="15551230000", phone_id="PHONE123"):
-    return _envelope(phone_id, {
-        "from": from_number, "id": "wamid.AUD1", "type": "audio",
+def audio_payload(media_id="MEDIA_AUD", from_number="15551230000", phone_id="PHONE123",
+                  msg_id=None, name="Test User"):
+    return _envelope(phone_id, from_number, name, {
+        "from": from_number, "id": msg_id or _mid("AUD"), "type": "audio",
         "audio": {"id": media_id, "mime_type": "audio/ogg"},
     })
 
 
 def status_payload(phone_id="PHONE123"):
     """A delivery-status callback (no 'messages' key)."""
-    return _envelope(phone_id, None, statuses=[{"status": "delivered"}])
+    return _envelope(phone_id, None, None, None, statuses=[{"status": "delivered"}])
 
 
-def _envelope(phone_id, message, statuses=None):
+def _envelope(phone_id, from_number, name, message, statuses=None):
     value = {"messaging_product": "whatsapp", "metadata": {"phone_number_id": phone_id}}
+    if from_number and name:
+        value["contacts"] = [{"profile": {"name": name}, "wa_id": from_number}]
     if message is not None:
         value["messages"] = [message]
     if statuses is not None:

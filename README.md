@@ -41,7 +41,9 @@ This rebuild fixes all of that and delivers the multimodal assistant the name al
 - 🔐 **Signed webhooks** — validates Meta's `X-Hub-Signature-256` so spoofed requests are rejected.
 - 🧭 **Commands** — `/help` and `/reset` handled without an AI call.
 - 🔌 **OpenAI or Azure OpenAI**, with adaptive params (drops anything a model rejects and retries).
-- 🩺 **Robust webhook** — always returns `200` for non-message events and handler errors so Meta doesn't spam retries; `/healthz` for uptime checks.
+- 🗄️ **Relational persistence** — optional Postgres/SQLite store with a `users → conversations → messages` schema, shared across workers and durable across restarts.
+- ♻️ **Idempotent ingestion** — a unique `wa_message_id` means WhatsApp's re-delivered webhooks are never processed (or answered) twice.
+- 🩺 **Robust webhook** — always returns `200` for non-message events and handler errors so Meta doesn't spam retries; `/healthz` and `/stats` for monitoring.
 
 ## 🏗️ How it works
 
@@ -119,34 +121,68 @@ Tests mock the model and the WhatsApp HTTP calls, so the suite runs **offline wi
 - **Verify signatures in production.** Set `WHATSAPP_APP_SECRET` so forged webhook calls are rejected. Without it, signature checking is skipped for local dev.
 - For multi-worker or persistent deployments, set `DATABASE_URL` so conversation history is shared and durable — see [Conversation memory](#-conversation-memory) below.
 
-## 🧠 Conversation memory
+## 🧠 Conversation memory & database
 
-Each user gets their own conversation history so the assistant remembers context
-across messages. History is **bounded** to the last `MAX_HISTORY_TURNS` exchanges
-(the system prompt is always preserved), keeping token usage in check.
+Each user gets their own history so the assistant remembers context across
+messages, bounded to the last `MAX_HISTORY_TURNS` exchanges (the system prompt is
+always preserved) to keep token usage in check.
 
-There are two interchangeable stores behind one interface
-(`history` / `append` / `pop_last` / `reset`):
+Two interchangeable stores sit behind one interface:
 
-| Store | When it's used | Notes |
+| Store | When | Notes |
 |---|---|---|
-| **In-process** ([`app/memory.py`](app/memory.py)) | `DATABASE_URL` unset | Zero setup. Great for tests and single-process runs. |
-| **SQL** ([`app/sql_memory.py`](app/sql_memory.py)) | `DATABASE_URL` set | Shared across workers and **persistent**. SQLite or PostgreSQL. |
+| **In-process** ([`app/memory.py`](app/memory.py)) | `DATABASE_URL` unset | Zero setup. Tests and single-process runs. |
+| **SQL repository** ([`app/db/`](app/db)) | `DATABASE_URL` set | Shared across workers, **persistent**, full relational schema. PostgreSQL (recommended) or SQLite. |
 
 ```bash
+# Production — shared Postgres (recommended):
+DATABASE_URL=postgresql://user:pass@localhost:5432/whatsbot
 # Local file DB — nothing to install:
 DATABASE_URL=sqlite:///conversations.db
-
-# Production — shared Postgres:
-DATABASE_URL=postgresql://user:pass@localhost:5432/whatsbot
 ```
 
-**Why this matters:** the production server runs multiple Gunicorn workers, and
-Meta load-balances a user's messages across them. With in-process memory, a
-follow-up message can hit a worker that never saw the earlier ones — so the bot
-"forgets" mid-conversation. A shared `DATABASE_URL` gives every worker one view
-of the history, and it survives restarts. The table is created automatically on
-first run; `docker compose up` brings up a ready-to-use Postgres service.
+**Why it matters:** in production the server runs multiple Gunicorn workers and
+Meta load-balances a user's messages across them. With in-process memory a
+follow-up can hit a worker that never saw the earlier messages — so the bot
+"forgets" mid-conversation. A shared database gives every worker one view of the
+history, and it survives restarts. `docker compose up` starts a ready Postgres
+service and points the app at it.
+
+### Schema
+
+Tables are created automatically on first run ([`app/db/models.py`](app/db/models.py)):
+
+```
+┌─────────────┐        ┌──────────────────┐        ┌─────────────────────┐
+│   users     │ 1    N │  conversations   │ 1    N │     messages        │
+├─────────────┤───────►├──────────────────┤───────►├─────────────────────┤
+│ id          │        │ id               │        │ id                  │
+│ wa_id (uniq)│        │ user_id (FK)     │        │ conversation_id (FK)│
+│ profile_name│        │ is_active        │        │ user_id (FK)        │
+│ is_blocked  │        │ started_at       │        │ role                │
+│ message_cnt │        │ ended_at         │        │ message_type        │
+│ created_at  │        └──────────────────┘        │ content             │
+│ last_seen_at│                                     │ wa_message_id (uniq)│
+└─────────────┘                                     │ media_id, created_at│
+                                                    └─────────────────────┘
+```
+
+- **users** — one row per WhatsApp contact, with profile name, last-seen, and message count.
+- **conversations** — sessions. `/reset` closes the active one; the next message opens a fresh one, so history stays segmented (and the old transcript is preserved).
+- **messages** — every turn, tagged by modality (`text` / `image` / `audio`). `wa_message_id` is **unique**, which makes ingestion **idempotent**: WhatsApp re-delivers webhooks, and the constraint stops the same message being stored or answered twice.
+
+### `GET /stats`
+
+When a database is configured, returns aggregate usage (counts only, no PII):
+
+```json
+{ "users": 12, "conversations": 30, "active_conversations": 11,
+  "messages": 214, "messages_by_type": { "text": 180, "image": 22, "audio": 12 } }
+```
+
+> Migrations: the app bootstraps tables with `create_all`. For evolving schemas
+> in production, add [Alembic](https://alembic.sqlalchemy.org/) — the ORM models
+> are already structured for it.
 
 ## 📁 Project layout
 
@@ -159,7 +195,7 @@ whatsapp-ai-assistant/
 │   ├── routes.py          # /, /healthz, /webhook (verify + receive)
 │   ├── handler.py         # dispatch: message -> reply -> send
 │   ├── memory.py          # in-process store + build_memory() factory
-│   ├── sql_memory.py      # SQLite/Postgres store (shared, persistent)
+│   ├── db/                # ORM models (users/conversations/messages) + repository
 │   ├── ai/                # chat · vision · transcribe · client
 │   ├── whatsapp/          # parser · verify (HMAC) · client (Graph API)
 │   └── templates/index.html

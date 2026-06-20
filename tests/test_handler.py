@@ -57,6 +57,23 @@ def test_chat_failure_is_graceful(fake_wa, monkeypatch):
     assert len(mem.history("15551230000")) == 1
 
 
+def test_duplicate_message_is_skipped(fake_ai, fake_wa):
+    mem = _mem()
+    payload = text_payload("hello", msg_id="wamid.DUP")
+    handler.handle_incoming(parse_webhook(payload), mem)
+    assert len(fake_wa) == 1
+    # Re-deliver the exact same message id -> skipped, no second send.
+    reply = handler.handle_incoming(parse_webhook(payload), mem)
+    assert reply == ""
+    assert len(fake_wa) == 1
+
+
+def test_profile_name_is_recorded(fake_ai, fake_wa):
+    mem = _mem()
+    handler.handle_incoming(parse_webhook(text_payload("hi", name="Alice")), mem)
+    assert mem._profiles.get("15551230000") == "Alice"
+
+
 def test_memory_persists_across_messages(fake_ai, fake_wa):
     mem = _mem()
     handler.handle_incoming(parse_webhook(text_payload("first")), mem)

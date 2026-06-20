@@ -23,6 +23,15 @@ def healthz():
     return jsonify({"status": "ok"})
 
 
+@bp.get("/stats")
+def stats():
+    """Aggregate usage counts (only when a DATABASE_URL store is active)."""
+    store = current_app.memory
+    if not hasattr(store, "stats"):
+        return jsonify({"detail": "Stats require a DATABASE_URL-backed store."}), 200
+    return jsonify(store.stats())
+
+
 @bp.get("/webhook")
 def webhook_verify():
     """Meta subscription handshake."""

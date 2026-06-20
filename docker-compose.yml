@@ -7,12 +7,12 @@ services:
       - .env
     environment:
       - FLASK_DEBUG=false
+      # Use the Postgres service below by default (override in .env if needed).
+      - DATABASE_URL=postgresql://whatsbot:whatsbot@db:5432/whatsbot
     depends_on:
       - db
 
-  # Optional Postgres for shared, persistent conversation history.
-  # Point DATABASE_URL at it in .env, e.g.:
-  #   DATABASE_URL=postgresql://whatsbot:whatsbot@db:5432/whatsbot
+  # Postgres for shared, persistent conversation history (users/conversations/messages).
   db:
     image: postgres:16-alpine
     environment:
