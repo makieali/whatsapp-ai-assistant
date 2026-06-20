@@ -46,6 +46,11 @@ class Config:
     )
     MAX_HISTORY_TURNS = int(os.getenv("MAX_HISTORY_TURNS", "12"))
 
+    # Conversation store. Unset -> in-process memory (single worker / tests).
+    # Set -> shared, persistent SQL store, e.g.
+    #   sqlite:///conversations.db   or   postgresql://user:pass@host/db
+    DATABASE_URL = os.getenv("DATABASE_URL")
+
     @classmethod
     def use_azure(cls) -> bool:
         return bool(cls.AZURE_OPENAI_API_KEY)

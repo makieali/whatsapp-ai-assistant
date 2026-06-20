@@ -35,7 +35,7 @@ This rebuild fixes all of that and delivers the multimodal assistant the name al
 
 ## ✨ Features
 
-- 💬 **Text chat** with per-user conversation memory (bounded so it never grows unbounded).
+- 💬 **Text chat** with per-user conversation memory — bounded, and optionally **persisted to SQLite/Postgres** so it's shared across workers and survives restarts.
 - 🖼️ **Vision** — send a photo (with an optional caption) and the assistant analyzes it.
 - 🎙️ **Voice notes** — transcribed with Whisper, then answered.
 - 🔐 **Signed webhooks** — validates Meta's `X-Hub-Signature-256` so spoofed requests are rejected.
@@ -98,6 +98,7 @@ All via environment variables (see [`.env.example`](./.env.example)):
 | `WHATSAPP_VERIFY_TOKEN` | You choose it; must match the Meta webhook config. |
 | `WHATSAPP_APP_SECRET` | Enables `X-Hub-Signature-256` verification. |
 | `MAX_HISTORY_TURNS` | Conversation turns kept per user (default 12). |
+| `DATABASE_URL` | Optional. Persist + share conversation history (`sqlite:///…` or `postgresql://…`). Unset = in-process. |
 
 > **Voice notes** require a Whisper-capable endpoint. Standard OpenAI has `whisper-1`; on Azure you need a separate Whisper deployment, otherwise voice falls back to a friendly error while text and vision keep working.
 
@@ -116,7 +117,36 @@ Tests mock the model and the WhatsApp HTTP calls, so the suite runs **offline wi
 
 - **No secrets in the repo.** Everything sensitive comes from `.env`, which is git-ignored.
 - **Verify signatures in production.** Set `WHATSAPP_APP_SECRET` so forged webhook calls are rejected. Without it, signature checking is skipped for local dev.
-- Conversation memory is **in-process** ([`app/memory.py`](app/memory.py)); for multi-worker or persistent deployments, back it with Redis — the interface is tiny.
+- For multi-worker or persistent deployments, set `DATABASE_URL` so conversation history is shared and durable — see [Conversation memory](#-conversation-memory) below.
+
+## 🧠 Conversation memory
+
+Each user gets their own conversation history so the assistant remembers context
+across messages. History is **bounded** to the last `MAX_HISTORY_TURNS` exchanges
+(the system prompt is always preserved), keeping token usage in check.
+
+There are two interchangeable stores behind one interface
+(`history` / `append` / `pop_last` / `reset`):
+
+| Store | When it's used | Notes |
+|---|---|---|
+| **In-process** ([`app/memory.py`](app/memory.py)) | `DATABASE_URL` unset | Zero setup. Great for tests and single-process runs. |
+| **SQL** ([`app/sql_memory.py`](app/sql_memory.py)) | `DATABASE_URL` set | Shared across workers and **persistent**. SQLite or PostgreSQL. |
+
+```bash
+# Local file DB — nothing to install:
+DATABASE_URL=sqlite:///conversations.db
+
+# Production — shared Postgres:
+DATABASE_URL=postgresql://user:pass@localhost:5432/whatsbot
+```
+
+**Why this matters:** the production server runs multiple Gunicorn workers, and
+Meta load-balances a user's messages across them. With in-process memory, a
+follow-up message can hit a worker that never saw the earlier ones — so the bot
+"forgets" mid-conversation. A shared `DATABASE_URL` gives every worker one view
+of the history, and it survives restarts. The table is created automatically on
+first run; `docker compose up` brings up a ready-to-use Postgres service.
 
 ## 📁 Project layout
 
@@ -128,7 +158,8 @@ whatsapp-ai-assistant/
 │   ├── __init__.py        # app factory
 │   ├── routes.py          # /, /healthz, /webhook (verify + receive)
 │   ├── handler.py         # dispatch: message -> reply -> send
-│   ├── memory.py          # bounded per-user conversation history
+│   ├── memory.py          # in-process store + build_memory() factory
+│   ├── sql_memory.py      # SQLite/Postgres store (shared, persistent)
 │   ├── ai/                # chat · vision · transcribe · client
 │   ├── whatsapp/          # parser · verify (HMAC) · client (Graph API)
 │   └── templates/index.html

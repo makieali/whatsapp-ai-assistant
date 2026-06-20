@@ -41,3 +41,17 @@ class ConversationMemory:
     def reset_all(self) -> None:
         with self._lock:
             self._log.clear()
+
+
+def build_memory(config):
+    """Return a conversation store based on config.
+
+    Uses the SQL-backed store when ``DATABASE_URL`` is set (shared across workers
+    and persistent), otherwise the in-process store (great for tests and single
+    quick runs). Both expose the same interface, so nothing else changes.
+    """
+    if getattr(config, "DATABASE_URL", None):
+        from app.sql_memory import SqlMemory
+
+        return SqlMemory(config.SYSTEM_PROMPT, config.MAX_HISTORY_TURNS, config.DATABASE_URL)
+    return ConversationMemory(config.SYSTEM_PROMPT, config.MAX_HISTORY_TURNS)

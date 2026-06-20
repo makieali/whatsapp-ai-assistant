@@ -6,16 +6,14 @@ import logging
 from flask import Flask
 
 from config import Config
-from app.memory import ConversationMemory
+from app.memory import build_memory
 
 
-def create_app(config_class=Config, memory: ConversationMemory | None = None) -> Flask:
+def create_app(config_class=Config, memory=None) -> Flask:
     app = Flask(__name__)
     app.config.from_object(config_class)
     app.secret_key = config_class.SECRET_KEY
-    app.memory = memory or ConversationMemory(
-        config_class.SYSTEM_PROMPT, config_class.MAX_HISTORY_TURNS
-    )
+    app.memory = memory or build_memory(config_class)
 
     logging.basicConfig(
         level=logging.DEBUG if config_class.DEBUG else logging.INFO,

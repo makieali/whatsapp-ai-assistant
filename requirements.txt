@@ -3,6 +3,9 @@ openai>=1.55,<3
 python-dotenv==1.0.1
 requests==2.32.3
 Werkzeug==3.0.3
+SQLAlchemy>=2.0,<3
+# Postgres driver — only needed when DATABASE_URL points at PostgreSQL.
+psycopg[binary]>=3.1
 
 # Dev / test
 pytest==8.2.2

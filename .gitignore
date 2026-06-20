@@ -24,3 +24,7 @@ logs.txt
 .DS_Store
 .idea/
 .vscode/
+
+# Local SQLite databases
+*.db
+conversations.db

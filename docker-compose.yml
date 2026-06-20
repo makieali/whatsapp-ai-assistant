@@ -7,3 +7,22 @@ services:
       - .env
     environment:
       - FLASK_DEBUG=false
+    depends_on:
+      - db
+
+  # Optional Postgres for shared, persistent conversation history.
+  # Point DATABASE_URL at it in .env, e.g.:
+  #   DATABASE_URL=postgresql://whatsbot:whatsbot@db:5432/whatsbot
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=whatsbot
+      - POSTGRES_PASSWORD=whatsbot
+      - POSTGRES_DB=whatsbot
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
